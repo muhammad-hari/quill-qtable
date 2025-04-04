@@ -123,6 +123,17 @@ const COL_TOOL_CELL_HEIGHT = 12;
 const ROW_TOOL_WIDTH = 12;
 const CELL_MIN_WIDTH = 50;
 const PRIMARY_COLOR = '#35A7ED';
+
+/**
+ * TableColumnTool is a utility class for managing column-level controls
+ * in a Quill editor table. It provides functionality such as column resizing
+ * using draggable handles above the table.
+ *
+ * @class
+ * @param {HTMLTableElement} table - The table DOM element to attach the tool to.
+ * @param {Quill} quill - The Quill editor instance.
+ * @param {Object} options - Additional configuration options.
+ */
 class TableColumnTool {
   constructor(table, quill, options) {
     if (!table) return null;
@@ -132,6 +143,11 @@ class TableColumnTool {
     this.domNode = null;
     this.initColTool();
   }
+
+  /**
+   * Initializes the column tool overlay element above the table,
+   * calculates positioning, and appends it to the editor container.
+   */
   initColTool() {
     const parent = this.quill.root.parentNode;
     const tableRect = this.table.getBoundingClientRect();
@@ -148,26 +164,46 @@ class TableColumnTool {
       top: `${tableViewRect.top - containerRect.top + parent.scrollTop - COL_TOOL_HEIGHT - 5}px`
     });
   }
+
+  /**
+   * Creates a single column tool cell, including the resizable handle (holder).
+   *
+   * @returns {HTMLElement} The DOM element representing a column tool cell.
+   */
   createToolCell() {
     const toolCell = document.createElement('div');
     toolCell.classList.add('qlbt-col-tool-cell');
     const resizeHolder = document.createElement('div');
     resizeHolder.classList.add('qlbt-col-tool-cell-holder');
     css(toolCell, {
-      'height': `${COL_TOOL_CELL_HEIGHT}px`
+      'height': `${COL_TOOL_CELL_HEIGHT}px`,
+      'width': '100%'
     });
     toolCell.appendChild(resizeHolder);
     return toolCell;
   }
+
+  /**
+   * Updates the column tool cells to match the current table structure.
+   * It ensures that each visible column has a resizable handle,
+   * and it adjusts each cell’s minimum width.
+   */
   updateToolCells() {
     const tableContainer = external_commonjs_quill_commonjs2_quill_amd_quill_root_Quill_default().find(this.table);
+    if (!tableContainer) {
+      console.warn('[updateToolCells] Failed to find Quill blot for table.');
+      return;
+    }
     const CellsInFirstRow = tableContainer.children.tail.children.head.children;
     const tableCols = tableContainer.colGroup().children;
     const cellsNumber = computeCellsNumber(CellsInFirstRow);
     let existCells = Array.from(this.domNode.querySelectorAll('.qlbt-col-tool-cell'));
     for (let index = 0; index < Math.max(cellsNumber, existCells.length); index++) {
       let col = tableCols.at(index);
-      let colWidth = col && parseInt(col.formats()[col.statics.blotName].width, 10);
+      let width = col?.formats()?.[col?.statics?.blotName]?.width;
+      let colWidth = parseInt(width, 10);
+      if (isNaN(colWidth)) colWidth = CELL_MIN_WIDTH;
+
       // if cell already exist
       let toolCell = null;
       if (!existCells[index]) {
@@ -189,12 +225,31 @@ class TableColumnTool {
       }
     }
   }
+
+  /**
+   * Removes the column tool overlay from the DOM.
+   *
+   * @returns {null}
+   */
   destroy() {
-    this.domNode.remove();
+    if (this.domNode?.parentNode) {
+      this.domNode.remove();
+    }
     return null;
   }
+
+  /**
+   * Binds the necessary mouse event handlers to enable column resizing
+   * via the tool cell's holder. It also handles visual feedback during drag.
+   *
+   * @param {HTMLElement} cell - The column tool cell element to attach events to.
+   */
   addColCellHolderHandler(cell) {
     const tableContainer = external_commonjs_quill_commonjs2_quill_amd_quill_root_Quill_default().find(this.table);
+    if (!tableContainer) {
+      console.warn('[addColCellHolderHandler] Failed to find Quill blot for table.');
+      return;
+    }
     const $holder = cell.querySelector(".qlbt-col-tool-cell-holder");
     let dragging = false;
     let x0 = 0;
@@ -221,32 +276,55 @@ class TableColumnTool {
     };
     const handleMouseup = e => {
       e.preventDefault();
+      if (!this.domNode || !tableContainer || !cell) {
+        console.warn('[ColTool] handleMouseup: Required DOM references missing.');
+        return;
+      }
       const existCells = Array.from(this.domNode.querySelectorAll('.qlbt-col-tool-cell'));
       const colIndex = existCells.indexOf(cell);
       const colBlot = tableContainer.colGroup().children.at(colIndex);
       if (dragging) {
-        colBlot.format('width', width0 + delta);
+        const newWidth = width0 + delta;
+        if (colBlot) {
+          colBlot.format('width', newWidth);
+        } else {
+          console.warn(`[ColTool] handleMouseup: colBlot not found for index ${colIndex}`);
+        }
         css(cell, {
-          'min-width': `${width0 + delta}px`
+          'min-width': `${newWidth}px`
         });
         x0 = 0;
         x = 0;
         delta = 0;
         width0 = 0;
         dragging = false;
-        $holder.classList.remove('dragging');
+        $holder?.classList.remove('dragging');
       }
       document.removeEventListener('mousemove', handleDrag, false);
       document.removeEventListener('mouseup', handleMouseup, false);
       tableRect = {};
       cellRect = {};
-      $helpLine.remove();
+      if ($helpLine && $helpLine.parentNode) {
+        $helpLine.remove();
+      }
       $helpLine = null;
-      tableContainer.updateTableWidth();
-      const tableSelection = this.quill.getModule('qtable').tableSelection;
-      tableSelection && tableSelection.clearSelection();
+      try {
+        tableContainer.updateTableWidth();
+      } catch (err) {
+        console.error('[ColTool] Error updating table width:', err);
+      }
+      try {
+        const tableSelection = this.quill?.getModule('qtable')?.tableSelection;
+        tableSelection?.clearSelection();
+      } catch (err) {
+        console.warn('[ColTool] Error clearing selection:', err);
+      }
     };
     const handleMousedown = e => {
+      if (!cell || !this.table || !this.quill) {
+        console.warn('[ColTool] handleMousedown: Required references not available.');
+        return;
+      }
       document.addEventListener('mousemove', handleDrag, false);
       document.addEventListener('mouseup', handleMouseup, false);
       tableRect = this.table.getBoundingClientRect();
@@ -265,14 +343,27 @@ class TableColumnTool {
       dragging = true;
       x0 = e.clientX;
       width0 = cellRect.width;
-      $holder.classList.add('dragging');
+      $holder?.classList.add('dragging');
     };
     $holder.addEventListener('mousedown', handleMousedown, false);
   }
+
+  /**
+   * Returns all existing column tool cell elements.
+   *
+   * @returns {HTMLElement[]} An array of column tool cell DOM nodes.
+   */
   colToolCells() {
     return Array.from(this.domNode.querySelectorAll('.qlbt-col-tool-cell'));
   }
 }
+
+/**
+ * Computes the total number of columns in the first row by summing up colspans.
+ *
+ * @param {Array} CellsInFirstRow - An array of Quill table cell blots in the first row.
+ * @returns {number} Total number of columns, considering colspan.
+ */
 function computeCellsNumber(CellsInFirstRow) {
   return CellsInFirstRow.reduce((sum, cell) => {
     const cellColspan = cell.formats().colspan;
@@ -284,7 +375,18 @@ function computeCellsNumber(CellsInFirstRow) {
 
 
 const Block = external_commonjs_quill_commonjs2_quill_amd_quill_root_Quill_default()["import"]("blots/block");
+
+/**
+ * Custom Header blot used for table headers (e.g., H1-H6) in Quill editor.
+ * Extends Quill's Block blot and supports data attributes related to tables.
+ */
 class Header extends Block {
+  /**
+   * Creates a DOM node for the header blot with optional table-related attributes.
+   *
+   * @param {string|object} value - Header value or an object containing metadata.
+   * @returns {HTMLElement} The created DOM node.
+   */
   static create(value) {
     if (typeof value === 'string') {
       value = {
@@ -292,6 +394,8 @@ class Header extends Block {
       };
     }
     const node = super.create(value.value);
+
+    // Set table-related identity and attributes
     CELL_IDENTITY_KEYS.forEach(key => {
       if (value[key]) node.setAttribute(`data-${key}`, value[key]);
     });
@@ -300,6 +404,13 @@ class Header extends Block {
     });
     return node;
   }
+
+  /**
+   * Extracts format attributes from a DOM node.
+   *
+   * @param {HTMLElement} domNode - The DOM node to read attributes from.
+   * @returns {object} The extracted format values.
+   */
   static formats(domNode) {
     const formats = {};
     formats.value = this.tagName.indexOf(domNode.tagName) + 1;
@@ -310,6 +421,13 @@ class Header extends Block {
       return formats;
     }, formats);
   }
+
+  /**
+   * Applies formatting to the header blot.
+   *
+   * @param {string} name - The format name.
+   * @param {*} value - The value to set.
+   */
   format(name, value) {
     const {
       row,
@@ -328,6 +446,7 @@ class Header extends Block {
         });
       } else {
         if (row) {
+          // Convert header to regular TableCellLine if header format removed
           this.replaceWith(TableCellLine.blotName, {
             row,
             cell,
@@ -342,12 +461,21 @@ class Header extends Block {
       super.format(name, value);
     }
   }
+
+  /**
+   * Optimizes the blot structure to ensure proper table structure.
+   * Called automatically by Quill when the document is mutated.
+   *
+   * @param {object} context - The optimization context.
+   */
   optimize(context) {
     const {
       row,
       rowspan,
       colspan
     } = Header.formats(this.domNode);
+
+    // If this header is not inside a TableCell, wrap it
     if (row && !(this.parent instanceof TableCell)) {
       this.wrap(TableCell.blotName, {
         row,
@@ -356,26 +484,34 @@ class Header extends Block {
       });
     }
 
-    // ShadowBlot optimize
+    // Enforce allowed children (required by Quill internals)
     this.enforceAllowedChildren();
+
+    // Ensure uiNode is at the beginning
     if (this.uiNode != null && this.uiNode !== this.domNode.firstChild) {
       this.domNode.insertBefore(this.uiNode, this.domNode.firstChild);
     }
+
+    // Ensure it has children
     if (this.children.length === 0) {
       if (this.statics.defaultChild != null) {
         const child = this.scroll.create(this.statics.defaultChild.blotName);
         this.appendChild(child);
-        // TODO double check if necessary
-        // child.optimize(context);
+        // Optional: child.optimize(context)
       } else {
         this.remove();
       }
     }
-    // Block optimize
+
+    // Reset cache (used internally)
     this.cache = {};
   }
 }
+
+/** @static {string} The blot name used to register with Quill. */
 Header.blotName = 'header';
+
+/** @static {string[]} Supported HTML tags for this blot. */
 Header.tagName = ['H1', 'H2', 'H3', 'H4', 'H5', 'H6'];
 /* harmony default export */ const header = (Header);
 ;// ./src/formats/table.js
@@ -385,55 +521,103 @@ Header.tagName = ['H1', 'H2', 'H3', 'H4', 'H5', 'H6'];
 const Break = external_commonjs_quill_commonjs2_quill_amd_quill_root_Quill_default()["import"]("blots/break");
 const table_Block = external_commonjs_quill_commonjs2_quill_amd_quill_root_Quill_default()["import"]("blots/block");
 const Container = external_commonjs_quill_commonjs2_quill_amd_quill_root_Quill_default()["import"]("blots/container");
+
+// Table column attribute keys
 const COL_ATTRIBUTES = ["width"];
+
+// Default column width
 const COL_DEFAULT = {
-  width: 100
+  width: 'auto'
 };
+
+// Table cell identity keys (e.g., position references)
 const CELL_IDENTITY_KEYS = ["row", "cell"];
+
+// Table cell layout attributes
 const CELL_ATTRIBUTES = ["rowspan", "colspan"];
+
+// Default values for rowspan and colspan
 const CELL_DEFAULT = {
   rowspan: 1,
   colspan: 1
 };
 const ERROR_LIMIT = 5;
+
+/**
+ * Represents the content inside a table cell (block-level content inside a cell).
+ * Extends Quill's Block blot.
+ */
 class TableCellLine extends table_Block {
+  /**
+   * Creates a DOM node with default or provided cell attributes.
+   * Automatically generates row/cell IDs if missing.
+   *
+   * @param {object} value - Attributes for the table cell line.
+   * @returns {HTMLElement} The DOM node representing the cell line.
+   */
   static create(value) {
     const node = super.create(value);
+
+    // Auto-generate row and cell identifiers if not provided
     CELL_IDENTITY_KEYS.forEach(key => {
       let identityMaker = key === 'row' ? rowId : cellId;
       node.setAttribute(`data-${key}`, value[key] || identityMaker());
     });
+
+    // Set rowspan and colspan with fallback defaults
     CELL_ATTRIBUTES.forEach(attrName => {
       node.setAttribute(`data-${attrName}`, value[attrName] || CELL_DEFAULT[attrName]);
     });
+
+    // Optional background color for cell
     if (value['cell-bg']) {
       node.setAttribute('data-cell-bg', value['cell-bg']);
     }
     return node;
   }
+
+  /**
+   * Extracts all format attributes from a DOM node.
+   *
+   * @param {HTMLElement} domNode - DOM element to extract attributes from.
+   * @returns {object} Key-value pairs of formats.
+   */
   static formats(domNode) {
-    const formats = {};
-    return CELL_ATTRIBUTES.concat(CELL_IDENTITY_KEYS).concat(['cell-bg']).reduce((formats, attribute) => {
+    return [...CELL_ATTRIBUTES, ...CELL_IDENTITY_KEYS, 'cell-bg'].reduce((formats, attribute) => {
       if (domNode.hasAttribute(`data-${attribute}`)) {
         formats[attribute] = domNode.getAttribute(`data-${attribute}`) || undefined;
       }
       return formats;
-    }, formats);
+    }, {});
   }
+
+  /**
+   * Applies or removes formatting on the cell line.
+   *
+   * @param {string} name - Format name.
+   * @param {*} value - Format value.
+   */
   format(name, value) {
-    if (CELL_ATTRIBUTES.concat(CELL_IDENTITY_KEYS).indexOf(name) > -1) {
+    // Handle built-in cell attributes and IDs
+    if ([...CELL_ATTRIBUTES, ...CELL_IDENTITY_KEYS].includes(name)) {
       if (value) {
         this.domNode.setAttribute(`data-${name}`, value);
       } else {
         this.domNode.removeAttribute(`data-${name}`);
       }
-    } else if (name === 'cell-bg') {
+    }
+
+    // Handle custom cell background color
+    else if (name === 'cell-bg') {
       if (value) {
         this.domNode.setAttribute('data-cell-bg', value);
       } else {
         this.domNode.removeAttribute('data-cell-bg');
       }
-    } else if (name === 'header') {
+    }
+
+    // Convert to header format if requested
+    else if (name === 'header') {
       if (!value) return;
       const {
         row,
@@ -448,17 +632,26 @@ class TableCellLine extends table_Block {
         rowspan,
         colspan
       });
-    } else {
+    }
+
+    // Fallback for all other formats
+    else {
       super.format(name, value);
     }
   }
+
+  /**
+   * Optimizes the blot's structure and ensures correct parent container.
+   *
+   * @param {object} context - Optimization context from Quill.
+   */
   optimize(context) {
-    // cover shadowBlot's wrap call, pass params parentBlot initialize
-    // needed
     const rowId = this.domNode.getAttribute('data-row');
     const rowspan = this.domNode.getAttribute('data-rowspan');
     const colspan = this.domNode.getAttribute('data-colspan');
     const cellBg = this.domNode.getAttribute('data-cell-bg');
+
+    // Ensure it's inside the correct parent (e.g., TableCell)
     if (this.statics.requiredContainer && !(this.parent instanceof this.statics.requiredContainer)) {
       this.wrap(this.statics.requiredContainer.blotName, {
         row: rowId,
@@ -469,6 +662,12 @@ class TableCellLine extends table_Block {
     }
     super.optimize(context);
   }
+
+  /**
+   * Returns the parent container, assumed to be the TableCell blot.
+   *
+   * @returns {QuillBlot|null} Parent table cell container.
+   */
   tableCell() {
     return this.parent;
   }
@@ -476,9 +675,20 @@ class TableCellLine extends table_Block {
 TableCellLine.blotName = "table-cell-line";
 TableCellLine.className = "qlbt-cell-line";
 TableCellLine.tagName = "P";
+
+/**
+ * Represents a table cell container in Quill's blot structure.
+ * Wraps one or more `TableCellLine` children and holds cell metadata.
+ */
 class TableCell extends Container {
+  /**
+   * Check if this cell is mergeable with the next cell (i.e., same identity).
+   * Used by Quill to merge blocks during formatting optimizations.
+   *
+   * @returns {boolean}
+   */
   checkMerge() {
-    if (super.checkMerge() && this.next.children.head != null) {
+    if (super.checkMerge() && this.next?.children?.head) {
       const thisHead = this.children.head.formats()[this.children.head.statics.blotName];
       const thisTail = this.children.tail.formats()[this.children.tail.statics.blotName];
       const nextHead = this.next.children.head.formats()[this.next.children.head.statics.blotName];
@@ -487,27 +697,49 @@ class TableCell extends Container {
     }
     return false;
   }
+
+  /**
+   * Creates the DOM node for this blot and sets initial attributes.
+   *
+   * @param {object} value - Attributes to apply (row, rowspan, cell-bg, etc.)
+   * @returns {HTMLElement}
+   */
   static create(value) {
     const node = super.create(value);
     node.setAttribute("data-row", value.row);
+
+    // Cell span attributes
     CELL_ATTRIBUTES.forEach(attrName => {
       if (value[attrName]) {
         node.setAttribute(attrName, value[attrName]);
       }
     });
+
+    // Cell background
     if (value['cell-bg']) {
       node.setAttribute('data-cell-bg', value['cell-bg']);
       node.style.backgroundColor = value['cell-bg'];
     }
+
+    // Cell text color
     if (value['cell-color']) {
       node.setAttribute('data-cell-color', value['cell-color']);
       node.style.color = value['cell-color'];
     }
+
+    // Label color
     if (value['label-color']) {
       node.setAttribute('data-label-color', value['label-color']);
     }
     return node;
   }
+
+  /**
+   * Extracts formatting values from the DOM node.
+   *
+   * @param {HTMLElement} domNode
+   * @returns {object}
+   */
   static formats(domNode) {
     const formats = {};
     if (domNode.hasAttribute("data-row")) {
@@ -522,19 +754,30 @@ class TableCell extends Container {
     if (domNode.hasAttribute("data-label-color")) {
       formats["label-color"] = domNode.getAttribute("data-label-color");
     }
-    return CELL_ATTRIBUTES.reduce((formats, attribute) => {
-      if (domNode.hasAttribute(attribute)) {
-        formats[attribute] = domNode.getAttribute(attribute);
+
+    // Rowspan / Colspan
+    return CELL_ATTRIBUTES.reduce((acc, attr) => {
+      if (domNode.hasAttribute(attr)) {
+        acc[attr] = domNode.getAttribute(attr);
       }
-      return formats;
+      return acc;
     }, formats);
   }
+
+  /**
+   * Returns this cell's position in its parent row.
+   *
+   * @returns {number}
+   */
   cellOffset() {
-    if (this.parent) {
-      return this.parent.children.indexOf(this);
-    }
-    return -1;
+    return this.parent ? this.parent.children.indexOf(this) : -1;
   }
+
+  /**
+   * Returns the formats of this blot.
+   *
+   * @returns {object}
+   */
   formats() {
     const formats = {};
     if (this.domNode.hasAttribute("data-row")) {
@@ -543,13 +786,20 @@ class TableCell extends Container {
     if (this.domNode.hasAttribute("data-cell-bg")) {
       formats["cell-bg"] = this.domNode.getAttribute("data-cell-bg");
     }
-    return CELL_ATTRIBUTES.reduce((formats, attribute) => {
-      if (this.domNode.hasAttribute(attribute)) {
-        formats[attribute] = this.domNode.getAttribute(attribute);
+    return CELL_ATTRIBUTES.reduce((acc, attr) => {
+      if (this.domNode.hasAttribute(attr)) {
+        acc[attr] = this.domNode.getAttribute(attr);
       }
-      return formats;
+      return acc;
     }, formats);
   }
+
+  /**
+   * Toggle a data attribute on the DOM node.
+   *
+   * @param {string} name
+   * @param {*} value
+   */
   toggleAttribute(name, value) {
     if (value) {
       this.domNode.setAttribute(name, value);
@@ -557,49 +807,58 @@ class TableCell extends Container {
       this.domNode.removeAttribute(name);
     }
   }
+
+  /**
+   * Apply formatting to all child blots (usually TableCellLine).
+   *
+   * @param {string} name
+   * @param {*} value
+   */
   formatChildren(name, value) {
     this.children.forEach(child => {
       child.format(name, value);
     });
   }
+
+  /**
+   * Applies a format to this cell and its children.
+   *
+   * @param {string} name
+   * @param {*} value
+   */
   format(name, value) {
-    if (CELL_ATTRIBUTES.indexOf(name) > -1) {
+    if (CELL_ATTRIBUTES.includes(name)) {
       this.toggleAttribute(name, value);
       this.formatChildren(name, value);
-    } else if (['row'].indexOf(name) > -1) {
+    } else if (name === "row") {
       this.toggleAttribute(`data-${name}`, value);
       this.formatChildren(name, value);
-    } else if (name === 'cell-bg') {
+    } else if (name === "cell-bg") {
       this.toggleAttribute('data-cell-bg', value);
       this.formatChildren(name, value);
-      if (value) {
-        this.domNode.style.backgroundColor = value;
-      } else {
-        this.domNode.style.backgroundColor = 'initial';
-      }
-    } else if (name === 'cell-color') {
+      this.domNode.style.backgroundColor = value || 'initial';
+    } else if (name === "cell-color") {
       this.toggleAttribute('data-cell-color', value);
       this.formatChildren(name, value);
-      if (value) {
-        this.domNode.style.color = value;
-      } else {
-        this.domNode.style.color = 'initial';
-      }
-    } else if (name === 'label-color') {
+      this.domNode.style.color = value || 'initial';
+    } else if (name === "label-color") {
       this.toggleAttribute('data-label-color', value);
       this.formatChildren(name, value);
       const paragraph = this.domNode.querySelector("p");
-      if (value && paragraph) {
-        paragraph.style.backgroundColor = value;
-        paragraph.classList.add("qlbt-tag-label");
-      } else {
-        paragraph.style.backgroundColor = 'initial';
-        paragraph.classList.remove("qlbt-tag-label");
+      if (paragraph) {
+        paragraph.style.backgroundColor = value || 'initial';
+        paragraph.classList.toggle("qlbt-tag-label", !!value);
       }
     } else {
       super.format(name, value);
     }
   }
+
+  /**
+   * Ensures the cell is within a valid parent container.
+   *
+   * @param {object} context
+   */
   optimize(context) {
     const rowId = this.domNode.getAttribute("data-row");
     if (this.statics.requiredContainer && !(this.parent instanceof this.statics.requiredContainer)) {
@@ -609,19 +868,36 @@ class TableCell extends Container {
     }
     super.optimize(context);
   }
+
+  /**
+   * Returns the parent row blot.
+   *
+   * @returns {QuillBlot|null}
+   */
   row() {
     return this.parent;
   }
+
+  /**
+   * Returns the row index in the table.
+   *
+   * @returns {number}
+   */
   rowOffset() {
-    if (this.row()) {
-      return this.row().rowOffset();
-    }
-    return -1;
+    return this.row() ? this.row().rowOffset() : -1;
   }
+
+  /**
+   * Returns the table that this cell belongs to.
+   *
+   * @returns {QuillBlot|null}
+   */
   table() {
     return this.row() && this.row().table();
   }
 }
+
+// Blot registration info
 TableCell.blotName = "table";
 TableCell.tagName = "TD";
 class TableRow extends Container {
@@ -1134,14 +1410,32 @@ function cellId() {
 const table_selection_PRIMARY_COLOR = '#01C0C8';
 const LINE_POSITIONS = ['left', 'right', 'top', 'bottom'];
 const table_selection_ERROR_LIMIT = 2;
+
+/**
+ * Class to handle selection of table cells in a Quill editor
+ */
 class TableSelection {
+  /**
+   * @param {HTMLTableElement} table - The table DOM element
+   * @param {Quill} quill - The Quill editor instance
+   * @param {Object} options - Additional options (currently unused)
+   */
   constructor(table, quill, options) {
-    if (!table) return null;
+    if (!table) {
+      console.warn('No table passed to TableSelection');
+      return null;
+    }
     this.table = table;
     this.quill = quill;
     this.options = options;
-    this.boundary = {}; // params for selected square
-    this.selectedTds = []; // array for selected table-cells
+
+    /** @type {Object} Boundary of selection: {x, y, x1, y1, width, height} */
+    this.boundary = {};
+
+    /** @type {TableCell[]} Selected table cells */
+    this.selectedTds = [];
+
+    /** @type {boolean} Whether a selection is being dragged */
     this.dragging = false;
     this.selectingHandler = this.mouseDownHandler.bind(this);
     this.clearSelectionHandler = this.clearSelection.bind(this);
@@ -1149,12 +1443,15 @@ class TableSelection {
     this.quill.root.addEventListener('mousedown', this.selectingHandler, false);
     this.quill.on('text-change', this.clearSelectionHandler);
   }
+
+  /**
+   * Initialize helper lines (selection borders)
+   */
   helpLinesInitial() {
     let parent = this.quill.root.parentNode;
     LINE_POSITIONS.forEach(direction => {
       this[direction] = document.createElement('div');
-      this[direction].classList.add('qlbt-selection-line');
-      this[direction].classList.add('qlbt-selection-line-' + direction);
+      this[direction].classList.add('qlbt-selection-line', 'qlbt-selection-line-' + direction);
       css(this[direction], {
         position: 'absolute',
         display: 'none',
@@ -1163,10 +1460,17 @@ class TableSelection {
       parent.appendChild(this[direction]);
     });
   }
+
+  /**
+   * Mouse down handler for starting cell selection
+   * @param {MouseEvent} e 
+   */
   mouseDownHandler(e) {
     if (e.button !== 0 || !e.target.closest(".quill-qtable")) return;
-    this.quill.root.addEventListener('mousemove', mouseMoveHandler, false);
-    this.quill.root.addEventListener('mouseup', mouseUpHandler, false);
+    this.mouseMoveHandler = mouseMoveHandler;
+    this.mouseUpHandler = mouseUpHandler;
+    this.quill.root.removeEventListener('mousemove', this.mouseMoveHandler);
+    this.quill.root.removeEventListener('mouseup', this.mouseUpHandler);
     const self = this;
     const startTd = e.target.closest('td[data-row]');
     const startTdRect = getRelativeRect(startTd.getBoundingClientRect(), this.quill.root.parentNode);
@@ -1175,37 +1479,52 @@ class TableSelection {
     this.correctBoundary();
     this.selectedTds = this.computeSelectedTds();
     this.repositionHelpLines();
+
+    /**
+     * Mouse move handler to track selection area
+     * @param {MouseEvent} e 
+     */
     function mouseMoveHandler(e) {
       if (e.button !== 0 || !e.target.closest(".quill-qtable")) return;
       const endTd = e.target.closest('td[data-row]');
+      if (!endTd) return;
       const endTdRect = getRelativeRect(endTd.getBoundingClientRect(), self.quill.root.parentNode);
       self.boundary = computeBoundaryFromRects(startTdRect, endTdRect);
       self.correctBoundary();
       self.selectedTds = self.computeSelectedTds();
       self.repositionHelpLines();
-
-      // avoid select text in multiple table-cell
       if (startTd !== endTd) {
         self.quill.blur();
       }
     }
+
+    /**
+     * Mouse up handler to end selection
+     * @param {MouseEvent} e 
+     */
     function mouseUpHandler(e) {
       self.quill.root.removeEventListener('mousemove', mouseMoveHandler, false);
       self.quill.root.removeEventListener('mouseup', mouseUpHandler, false);
       self.dragging = false;
     }
+    this.quill.root.addEventListener('mousemove', this.mouseMoveHandler);
+    this.quill.root.addEventListener('mouseup', this.mouseUpHandler);
   }
+
+  /**
+   * Correct the selection boundary if it partially intersects a cell
+   */
   correctBoundary() {
     const tableContainer = external_commonjs_quill_commonjs2_quill_amd_quill_root_Quill_default().find(this.table);
     const tableCells = tableContainer.descendants(TableCell);
     tableCells.forEach(tableCell => {
-      let {
+      const {
         x,
         y,
         width,
         height
       } = getRelativeRect(tableCell.domNode.getBoundingClientRect(), this.quill.root.parentNode);
-      let isCellIntersected = (x + table_selection_ERROR_LIMIT >= this.boundary.x && x + table_selection_ERROR_LIMIT <= this.boundary.x1 || x - table_selection_ERROR_LIMIT + width >= this.boundary.x && x - table_selection_ERROR_LIMIT + width <= this.boundary.x1) && (y + table_selection_ERROR_LIMIT >= this.boundary.y && y + table_selection_ERROR_LIMIT <= this.boundary.y1 || y - table_selection_ERROR_LIMIT + height >= this.boundary.y && y - table_selection_ERROR_LIMIT + height <= this.boundary.y1);
+      const isCellIntersected = (x + table_selection_ERROR_LIMIT >= this.boundary.x && x + table_selection_ERROR_LIMIT <= this.boundary.x1 || x - table_selection_ERROR_LIMIT + width >= this.boundary.x && x - table_selection_ERROR_LIMIT + width <= this.boundary.x1) && (y + table_selection_ERROR_LIMIT >= this.boundary.y && y + table_selection_ERROR_LIMIT <= this.boundary.y1 || y - table_selection_ERROR_LIMIT + height >= this.boundary.y && y - table_selection_ERROR_LIMIT + height <= this.boundary.y1);
       if (isCellIntersected) {
         this.boundary = computeBoundaryFromRects(this.boundary, {
           x,
@@ -1216,63 +1535,78 @@ class TableSelection {
       }
     });
   }
+
+  /**
+   * Find all cells within the current boundary
+   * @returns {TableCell[]} Selected cells
+   */
   computeSelectedTds() {
     const tableContainer = external_commonjs_quill_commonjs2_quill_amd_quill_root_Quill_default().find(this.table);
     const tableCells = tableContainer.descendants(TableCell);
     return tableCells.reduce((selectedCells, tableCell) => {
-      let {
+      const {
         x,
         y,
         width,
         height
       } = getRelativeRect(tableCell.domNode.getBoundingClientRect(), this.quill.root.parentNode);
-      let isCellIncluded = x + table_selection_ERROR_LIMIT >= this.boundary.x && x - table_selection_ERROR_LIMIT + width <= this.boundary.x1 && y + table_selection_ERROR_LIMIT >= this.boundary.y && y - table_selection_ERROR_LIMIT + height <= this.boundary.y1;
+      const isCellIncluded = x + table_selection_ERROR_LIMIT >= this.boundary.x && x - table_selection_ERROR_LIMIT + width <= this.boundary.x1 && y + table_selection_ERROR_LIMIT >= this.boundary.y && y - table_selection_ERROR_LIMIT + height <= this.boundary.y1;
       if (isCellIncluded) {
         selectedCells.push(tableCell);
       }
       return selectedCells;
     }, []);
   }
+
+  /**
+   * Reposition the helper lines (selection borders) to match the current boundary
+   */
   repositionHelpLines() {
-    const tableViewScrollLeft = this.table.parentNode.scrollLeft;
+    const scrollLeft = this.table.parentNode.scrollLeft;
     css(this.left, {
       display: 'block',
-      left: `${this.boundary.x - tableViewScrollLeft - 1}px`,
+      left: `${this.boundary.x - scrollLeft - 1}px`,
       top: `${this.boundary.y}px`,
       height: `${this.boundary.height + 1}px`,
       width: '1px'
     });
     css(this.right, {
       display: 'block',
-      left: `${this.boundary.x1 - tableViewScrollLeft}px`,
+      left: `${this.boundary.x1 - scrollLeft}px`,
       top: `${this.boundary.y}px`,
       height: `${this.boundary.height + 1}px`,
       width: '1px'
     });
     css(this.top, {
       display: 'block',
-      left: `${this.boundary.x - 1 - tableViewScrollLeft}px`,
+      left: `${this.boundary.x - 1 - scrollLeft}px`,
       top: `${this.boundary.y}px`,
       width: `${this.boundary.width + 1}px`,
       height: '1px'
     });
     css(this.bottom, {
       display: 'block',
-      left: `${this.boundary.x - 1 - tableViewScrollLeft}px`,
+      left: `${this.boundary.x - 1 - scrollLeft}px`,
       top: `${this.boundary.y1 + 1}px`,
       width: `${this.boundary.width + 1}px`,
       height: '1px'
     });
   }
 
-  // based on selectedTds compute positions of help lines
-  // It is useful when selectedTds are not changed
+  /**
+   * Refresh the position of helper lines without recomputing selected cells
+   */
   refreshHelpLinesPosition() {
     const startRect = getRelativeRect(this.selectedTds[0].domNode.getBoundingClientRect(), this.quill.root.parentNode);
     const endRect = getRelativeRect(this.selectedTds[this.selectedTds.length - 1].domNode.getBoundingClientRect(), this.quill.root.parentNode);
     this.boundary = computeBoundaryFromRects(startRect, endRect);
     this.repositionHelpLines();
   }
+
+  /**
+   * Destroy this selection instance and clean up DOM/events
+   * @returns {null}
+   */
   destroy() {
     LINE_POSITIONS.forEach(direction => {
       this[direction].remove();
@@ -1280,14 +1614,27 @@ class TableSelection {
     });
     this.quill.root.removeEventListener('mousedown', this.selectingHandler, false);
     this.quill.off('text-change', this.clearSelectionHandler);
+    this.boundary = {};
+    this.selectedTds = [];
+    this.dragging = false;
     return null;
   }
+
+  /**
+   * Set selection by providing start and end rectangles
+   * @param {DOMRect} startRect 
+   * @param {DOMRect} endRect 
+   */
   setSelection(startRect, endRect) {
     this.boundary = computeBoundaryFromRects(getRelativeRect(startRect, this.quill.root.parentNode), getRelativeRect(endRect, this.quill.root.parentNode));
     this.correctBoundary();
     this.selectedTds = this.computeSelectedTds();
     this.repositionHelpLines();
   }
+
+  /**
+   * Clear current selection and hide helper lines
+   */
   clearSelection() {
     this.boundary = {};
     this.selectedTds = [];
@@ -1298,6 +1645,13 @@ class TableSelection {
     });
   }
 }
+
+/**
+ * Compute a boundary box from two rectangles
+ * @param {DOMRect|Object} startRect - Start rectangle
+ * @param {DOMRect|Object} endRect - End rectangle
+ * @returns {{x: number, y: number, x1: number, y1: number, width: number, height: number}}
+ */
 function computeBoundaryFromRects(startRect, endRect) {
   let x = Math.min(startRect.x, endRect.x, startRect.x + startRect.width - 1, endRect.x + endRect.width - 1);
   let x1 = Math.max(startRect.x, endRect.x, startRect.x + startRect.width - 1, endRect.x + endRect.width - 1);
@@ -1373,7 +1727,7 @@ var table_delete_table_code = `<?xml version="1.0" encoding="UTF-8"?> <svg xmlns
 
 
 
-const MENU_MIN_HEIHGT = 150;
+const MENU_MIN_HEIGHT = 150;
 const MENU_WIDTH = 200;
 const table_operation_menu_ERROR_LIMIT = 5;
 const DEFAULT_CELL_COLORS = ['#FFFFFF', '#08090A', '#EBEBEB', '#00695f', '#ff1744', '#FFEB3B', '#ff5722'];
@@ -1510,6 +1864,25 @@ const MENU_ITEMS_DEFAULT = {
     }
   }
 };
+
+/**
+ * TableOperationMenu handles the creation and rendering of a contextual operation menu
+ * for tables in the Quill editor. It provides functionality such as inserting/removing rows
+ * and columns, merging/unmerging cells, deleting tables, and applying colors to table cells.
+ *
+ * @class
+ * @param {Object} params - Initialization parameters.
+ * @param {HTMLElement} params.table - The table element associated with the menu.
+ * @param {number} params.left - The left offset (in pixels) where the menu will be displayed.
+ * @param {number} params.top - The top offset (in pixels) where the menu will be displayed.
+ * @param {Quill} quill - The Quill editor instance.
+ * @param {Object} options - Additional configuration for the menu.
+ * @param {Object} [options.items] - Custom menu items to override or extend the default.
+ * @param {Object} [options.color] - Background color options (e.g., label and color list).
+ * @param {Object} [options.textcolor] - Text color options (e.g., label and color list).
+ * @param {Object} [options.textlabel] - Label text color options (e.g., label and color list).
+ */
+
 class TableOperationMenu {
   constructor(params, quill, options) {
     const quillQTableModule = quill.getModule('qtable');
@@ -1528,19 +1901,40 @@ class TableOperationMenu {
     this.textColorSubTitle = options.textcolor && options.textcolor.text ? options.textcolor.text : DEFAULT_TEXT_COLOR_SUBTITLE;
     this.textColors = options.textcolor && options.textcolor.colors ? options.textcolor.colors : DEFAULT_TEXT_COLORS;
     this.textLabelSubTitle = options.textlabel && options.textlabel.text ? options.textlabel.text : DEFAULT_LABEL_TEXT_COLOR_SUBTITLE;
-    this.textLebelColors = options.textlabel && options.textlabel.colors ? options.textlabel.colors : DEFAULT_LABEL_TEXT_COLORS;
+    this.textLabelColors = options.textlabel && options.textlabel.colors ? options.textlabel.colors : DEFAULT_LABEL_TEXT_COLORS;
     this.menuInitial(params);
     this.mount();
     document.addEventListener("click", this.destroyHandler, false);
   }
+
+  /**
+  * Appends the operation menu DOM node to the body.
+  */
   mount() {
     document.body.appendChild(this.domNode);
   }
+
+  /**
+  * Removes the operation menu DOM node and unbinds the click event listener.
+  *
+  * @returns {null}
+  */
   destroy() {
-    this.domNode.remove();
-    document.removeEventListener("click", this.destroyHandler, false);
+    if (this.domNode && this.domNode.parentNode) {
+      this.domNode.remove();
+      document.removeEventListener("click", this.destroyHandler, false);
+    }
     return null;
   }
+
+  /**
+  * Initializes the menu UI structure based on provided parameters and options.
+  *
+  * @param {Object} params - Initialization parameters.
+  * @param {HTMLElement} params.table - The table element.
+  * @param {number} params.left - Left offset position for the menu.
+  * @param {number} params.top - Top offset position for the menu.
+  */
   menuInitial({
     table,
     left,
@@ -1552,15 +1946,17 @@ class TableOperationMenu {
       position: 'absolute',
       left: `${left}px`,
       top: `${top}px`,
-      'min-height': `${MENU_MIN_HEIHGT}px`,
+      'min-height': `${MENU_MIN_HEIGHT}px`,
       width: `${MENU_WIDTH}px`
     });
     for (let name in this.menuItems) {
-      if (this.menuItems[name]) {
+      if (this.menuItems[name] && typeof this.menuItems[name].handler === 'function') {
         this.domNode.appendChild(this.menuItemCreator(Object.assign({}, MENU_ITEMS_DEFAULT[name], this.menuItems[name])));
         if (['insertRowDown', 'unmergeCells'].indexOf(name) > -1) {
           this.domNode.appendChild(dividingCreator());
         }
+      } else {
+        console.warn(`Invalid menu item: ${name}`, this.menuItems[name]);
       }
     }
 
@@ -1578,7 +1974,7 @@ class TableOperationMenu {
     }
     if (this.options.textlabel && this.options.textlabel !== false) {
       this.domNode.appendChild(subTitleCreator(this.textLabelSubTitle));
-      this.domNode.appendChild(this.labelTextColorsItemCreator(this.textLebelColors));
+      this.domNode.appendChild(this.labelTextColorsItemCreator(this.textLabelColors));
       this.domNode.appendChild(dividingCreator());
     }
 
@@ -1597,6 +1993,13 @@ class TableOperationMenu {
       return subTitle;
     }
   }
+
+  /**
+  * Creates a background color picker UI element.
+  *
+  * @param {string[]} colors - List of color hex strings.
+  * @returns {HTMLElement} DOM node containing color options.
+  */
   colorsItemCreator(colors) {
     const self = this;
     const node = document.createElement('div');
@@ -1622,6 +2025,13 @@ class TableOperationMenu {
     }
     return node;
   }
+
+  /**
+  * Creates a text color picker UI element.
+  *
+  * @param {string[]} colors - List of color hex strings for text.
+  * @returns {HTMLElement} DOM node containing text color options.
+  */
   textColorsItemCreator(colors) {
     const self = this;
     const node = document.createElement('div');
@@ -1647,6 +2057,13 @@ class TableOperationMenu {
     }
     return node;
   }
+
+  /**
+  * Creates a label text color picker UI element.
+  *
+  * @param {string[]} colors - List of label text color hex strings.
+  * @returns {HTMLElement} DOM node with label color options.
+  */
   labelTextColorsItemCreator(colors) {
     const self = this;
     const node = document.createElement('div');
@@ -1672,6 +2089,16 @@ class TableOperationMenu {
     }
     return node;
   }
+
+  /**
+  * Creates an individual menu item button for table operations.
+  *
+  * @param {Object} item - Menu item configuration.
+  * @param {string} item.text - Text label for the menu item.
+  * @param {string} item.iconSrc - SVG icon string.
+  * @param {Function} item.handler - Click event handler for the menu item.
+  * @returns {HTMLElement} Menu item DOM node.
+  */
   menuItemCreator({
     text,
     iconSrc,
@@ -1687,10 +2114,24 @@ class TableOperationMenu {
     textSpan.innerText = text;
     node.appendChild(iconSpan);
     node.appendChild(textSpan);
-    node.addEventListener('click', handler.bind(this), false);
+    if (typeof handler === 'function') {
+      node.addEventListener('click', handler.bind(this), false);
+    } else {
+      console.warn(`Handler for menu item "${text}" is not a function`, handler);
+    }
     return node;
   }
 }
+
+/**
+ * Gets the index of a column tool cell that matches a given boundary condition.
+ *
+ * @param {HTMLElement[]} cells - List of tool cell elements.
+ * @param {DOMRect} boundary - Boundary used for comparison.
+ * @param {Function} conditionFn - Callback to evaluate the matching condition.
+ * @param {HTMLElement} container - Container used for relative position calculation.
+ * @returns {number|false} Index of the matching column or false if not found.
+ */
 function getColToolCellIndexByBoundary(cells, boundary, conditionFn, container) {
   return cells.reduce((findIndex, cell) => {
     let cellRect = getRelativeRect(cell.getBoundingClientRect(), container);
@@ -1700,6 +2141,16 @@ function getColToolCellIndexByBoundary(cells, boundary, conditionFn, container) 
     return findIndex;
   }, false);
 }
+
+/**
+ * Gets all indexes of column tool cells that match a given boundary condition.
+ *
+ * @param {HTMLElement[]} cells - List of tool cell elements.
+ * @param {DOMRect} boundary - Boundary used for comparison.
+ * @param {Function} conditionFn - Callback to evaluate the matching condition.
+ * @param {HTMLElement} container - Container used for relative position calculation.
+ * @returns {number[]} List of matching column indexes.
+ */
 function getColToolCellIndexesByBoundary(cells, boundary, conditionFn, container) {
   return cells.reduce((findIndexes, cell) => {
     let cellRect = getRelativeRect(cell.getBoundingClientRect(), container);
@@ -2321,7 +2772,7 @@ module.exports = __WEBPACK_EXTERNAL_MODULE__912__;
 /******/ 	
 /******/ 	/* webpack/runtime/getFullHash */
 /******/ 	(() => {
-/******/ 		__webpack_require__.h = () => ("30b445536457d10f8710")
+/******/ 		__webpack_require__.h = () => ("353608ecd983de3543a4")
 /******/ 	})();
 /******/ 	
 /******/ 	/* webpack/runtime/global */

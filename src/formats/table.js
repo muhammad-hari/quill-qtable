@@ -6,32 +6,57 @@ const Break = Quill.import("blots/break")
 const Block = Quill.import("blots/block")
 const Container = Quill.import("blots/container")
 
+// Table column attribute keys
 const COL_ATTRIBUTES = ["width"]
+
+// Default column width
 const COL_DEFAULT = {
-  width: 100
+  width: 'auto'
 }
+
+// Table cell identity keys (e.g., position references)
 const CELL_IDENTITY_KEYS = ["row", "cell"]
+
+// Table cell layout attributes
 const CELL_ATTRIBUTES = ["rowspan", "colspan"]
+
+// Default values for rowspan and colspan
 const CELL_DEFAULT = {
   rowspan: 1,
   colspan: 1
 }
+
 const ERROR_LIMIT = 5
 
+/**
+ * Represents the content inside a table cell (block-level content inside a cell).
+ * Extends Quill's Block blot.
+ */
 class TableCellLine extends Block {
+  /**
+   * Creates a DOM node with default or provided cell attributes.
+   * Automatically generates row/cell IDs if missing.
+   *
+   * @param {object} value - Attributes for the table cell line.
+   * @returns {HTMLElement} The DOM node representing the cell line.
+   */
   static create(value) {
     const node = super.create(value)
 
+    // Auto-generate row and cell identifiers if not provided
     CELL_IDENTITY_KEYS.forEach(key => {
       let identityMaker = key === 'row'
-        ? rowId : cellId
+        ? rowId
+        : cellId
       node.setAttribute(`data-${key}`, value[key] || identityMaker())
     })
 
+    // Set rowspan and colspan with fallback defaults
     CELL_ATTRIBUTES.forEach(attrName => {
       node.setAttribute(`data-${attrName}`, value[attrName] || CELL_DEFAULT[attrName])
     })
 
+    // Optional background color for cell
     if (value['cell-bg']) {
       node.setAttribute('data-cell-bg', value['cell-bg'])
     }
@@ -39,32 +64,49 @@ class TableCellLine extends Block {
     return node
   }
 
+  /**
+   * Extracts all format attributes from a DOM node.
+   *
+   * @param {HTMLElement} domNode - DOM element to extract attributes from.
+   * @returns {object} Key-value pairs of formats.
+   */
   static formats(domNode) {
-    const formats = {}
-
-    return CELL_ATTRIBUTES.concat(CELL_IDENTITY_KEYS).concat(['cell-bg']).reduce((formats, attribute) => {
+    return [...CELL_ATTRIBUTES, ...CELL_IDENTITY_KEYS, 'cell-bg'].reduce((formats, attribute) => {
       if (domNode.hasAttribute(`data-${attribute}`)) {
         formats[attribute] = domNode.getAttribute(`data-${attribute}`) || undefined
       }
       return formats
-    }, formats)
+    }, {})
   }
 
+  /**
+   * Applies or removes formatting on the cell line.
+   *
+   * @param {string} name - Format name.
+   * @param {*} value - Format value.
+   */
   format(name, value) {
-    if (CELL_ATTRIBUTES.concat(CELL_IDENTITY_KEYS).indexOf(name) > -1) {
+    // Handle built-in cell attributes and IDs
+    if ([...CELL_ATTRIBUTES, ...CELL_IDENTITY_KEYS].includes(name)) {
       if (value) {
         this.domNode.setAttribute(`data-${name}`, value)
       } else {
         this.domNode.removeAttribute(`data-${name}`)
       }
-    } else if (name === 'cell-bg') {
+    }
+
+    // Handle custom cell background color
+    else if (name === 'cell-bg') {
       if (value) {
         this.domNode.setAttribute('data-cell-bg', value)
       } else {
         this.domNode.removeAttribute('data-cell-bg')
       }
-    } else if (name === 'header') {
-      if (!value) return;
+    }
+
+    // Convert to header format if requested
+    else if (name === 'header') {
+      if (!value) return
       const { row, cell, rowspan, colspan } = TableCellLine.formats(this.domNode)
       super.format(name, {
         value,
@@ -73,20 +115,30 @@ class TableCellLine extends Block {
         rowspan,
         colspan
       })
-    } else {
+    }
+
+    // Fallback for all other formats
+    else {
       super.format(name, value)
     }
   }
 
+  /**
+   * Optimizes the blot's structure and ensures correct parent container.
+   *
+   * @param {object} context - Optimization context from Quill.
+   */
   optimize(context) {
-    // cover shadowBlot's wrap call, pass params parentBlot initialize
-    // needed
     const rowId = this.domNode.getAttribute('data-row')
     const rowspan = this.domNode.getAttribute('data-rowspan')
     const colspan = this.domNode.getAttribute('data-colspan')
     const cellBg = this.domNode.getAttribute('data-cell-bg')
-    if (this.statics.requiredContainer &&
-      !(this.parent instanceof this.statics.requiredContainer)) {
+
+    // Ensure it's inside the correct parent (e.g., TableCell)
+    if (
+      this.statics.requiredContainer &&
+      !(this.parent instanceof this.statics.requiredContainer)
+    ) {
       this.wrap(this.statics.requiredContainer.blotName, {
         row: rowId,
         colspan,
@@ -94,20 +146,37 @@ class TableCellLine extends Block {
         'cell-bg': cellBg
       })
     }
+
     super.optimize(context)
   }
 
+  /**
+   * Returns the parent container, assumed to be the TableCell blot.
+   *
+   * @returns {QuillBlot|null} Parent table cell container.
+   */
   tableCell() {
     return this.parent
   }
 }
+
 TableCellLine.blotName = "table-cell-line"
 TableCellLine.className = "qlbt-cell-line"
 TableCellLine.tagName = "P"
 
+/**
+ * Represents a table cell container in Quill's blot structure.
+ * Wraps one or more `TableCellLine` children and holds cell metadata.
+ */
 class TableCell extends Container {
+  /**
+   * Check if this cell is mergeable with the next cell (i.e., same identity).
+   * Used by Quill to merge blocks during formatting optimizations.
+   *
+   * @returns {boolean}
+   */
   checkMerge() {
-    if (super.checkMerge() && this.next.children.head != null) {
+    if (super.checkMerge() && this.next?.children?.head) {
       const thisHead = this.children.head.formats()[this.children.head.statics.blotName]
       const thisTail = this.children.tail.formats()[this.children.tail.statics.blotName]
       const nextHead = this.next.children.head.formats()[this.next.children.head.statics.blotName]
@@ -121,33 +190,49 @@ class TableCell extends Container {
     return false
   }
 
+  /**
+   * Creates the DOM node for this blot and sets initial attributes.
+   *
+   * @param {object} value - Attributes to apply (row, rowspan, cell-bg, etc.)
+   * @returns {HTMLElement}
+   */
   static create(value) {
     const node = super.create(value)
     node.setAttribute("data-row", value.row)
 
+    // Cell span attributes
     CELL_ATTRIBUTES.forEach(attrName => {
       if (value[attrName]) {
         node.setAttribute(attrName, value[attrName])
       }
     })
 
+    // Cell background
     if (value['cell-bg']) {
       node.setAttribute('data-cell-bg', value['cell-bg'])
       node.style.backgroundColor = value['cell-bg']
     }
 
-    if(value['cell-color']){
+    // Cell text color
+    if (value['cell-color']) {
       node.setAttribute('data-cell-color', value['cell-color'])
       node.style.color = value['cell-color']
     }
 
-    if(value['label-color']){
+    // Label color
+    if (value['label-color']) {
       node.setAttribute('data-label-color', value['label-color'])
     }
 
     return node
   }
 
+  /**
+   * Extracts formatting values from the DOM node.
+   *
+   * @param {HTMLElement} domNode
+   * @returns {object}
+   */
   static formats(domNode) {
     const formats = {}
 
@@ -167,25 +252,29 @@ class TableCell extends Container {
       formats["label-color"] = domNode.getAttribute("data-label-color")
     }
 
-
-
-
-    return CELL_ATTRIBUTES.reduce((formats, attribute) => {
-      if (domNode.hasAttribute(attribute)) {
-        formats[attribute] = domNode.getAttribute(attribute)
+    // Rowspan / Colspan
+    return CELL_ATTRIBUTES.reduce((acc, attr) => {
+      if (domNode.hasAttribute(attr)) {
+        acc[attr] = domNode.getAttribute(attr)
       }
-
-      return formats
+      return acc
     }, formats)
   }
 
+  /**
+   * Returns this cell's position in its parent row.
+   *
+   * @returns {number}
+   */
   cellOffset() {
-    if (this.parent) {
-      return this.parent.children.indexOf(this)
-    }
-    return -1
+    return this.parent ? this.parent.children.indexOf(this) : -1
   }
 
+  /**
+   * Returns the formats of this blot.
+   *
+   * @returns {object}
+   */
   formats() {
     const formats = {}
 
@@ -197,16 +286,21 @@ class TableCell extends Container {
       formats["cell-bg"] = this.domNode.getAttribute("data-cell-bg")
     }
 
-    return CELL_ATTRIBUTES.reduce((formats, attribute) => {
-      if (this.domNode.hasAttribute(attribute)) {
-        formats[attribute] = this.domNode.getAttribute(attribute)
+    return CELL_ATTRIBUTES.reduce((acc, attr) => {
+      if (this.domNode.hasAttribute(attr)) {
+        acc[attr] = this.domNode.getAttribute(attr)
       }
-
-      return formats
+      return acc
     }, formats)
   }
 
-  toggleAttribute (name, value) {
+  /**
+   * Toggle a data attribute on the DOM node.
+   *
+   * @param {string} name
+   * @param {*} value
+   */
+  toggleAttribute(name, value) {
     if (value) {
       this.domNode.setAttribute(name, value)
     } else {
@@ -214,61 +308,64 @@ class TableCell extends Container {
     }
   }
 
-  formatChildren (name, value) {
+  /**
+   * Apply formatting to all child blots (usually TableCellLine).
+   *
+   * @param {string} name
+   * @param {*} value
+   */
+  formatChildren(name, value) {
     this.children.forEach(child => {
       child.format(name, value)
     })
   }
 
+  /**
+   * Applies a format to this cell and its children.
+   *
+   * @param {string} name
+   * @param {*} value
+   */
   format(name, value) {
-    if (CELL_ATTRIBUTES.indexOf(name) > -1) {
+    if (CELL_ATTRIBUTES.includes(name)) {
       this.toggleAttribute(name, value)
       this.formatChildren(name, value)
-    } else if (['row'].indexOf(name) > -1) {
+    } else if (name === "row") {
       this.toggleAttribute(`data-${name}`, value)
       this.formatChildren(name, value)
-    } else if (name === 'cell-bg') {
+    } else if (name === "cell-bg") {
       this.toggleAttribute('data-cell-bg', value)
       this.formatChildren(name, value)
+      this.domNode.style.backgroundColor = value || 'initial'
+    } else if (name === "cell-color") {
+      this.toggleAttribute('data-cell-color', value)
+      this.formatChildren(name, value)
+      this.domNode.style.color = value || 'initial'
+    } else if (name === "label-color") {
+      this.toggleAttribute('data-label-color', value)
+      this.formatChildren(name, value)
 
-      if (value) {
-        this.domNode.style.backgroundColor = value
-      } else {
-        this.domNode.style.backgroundColor = 'initial'
+      const paragraph = this.domNode.querySelector("p")
+      if (paragraph) {
+        paragraph.style.backgroundColor = value || 'initial'
+        paragraph.classList.toggle("qlbt-tag-label", !!value)
       }
-    }
-    else if (name === 'cell-color') { 
-      this.toggleAttribute('data-cell-color', value);
-      this.formatChildren(name, value);
-
-      if (value) {
-        this.domNode.style.color = value; 
-      } else {
-        this.domNode.style.color = 'initial'; 
-      }
-    }
-    else if (name === 'label-color') { 
-      this.toggleAttribute('data-label-color', value);
-      this.formatChildren(name, value);
-      const paragraph = this.domNode.querySelector("p");
-      if (value && paragraph) {
-        paragraph.style.backgroundColor = value; 
-        paragraph.classList.add("qlbt-tag-label");
-      } else {
-        paragraph.style.backgroundColor = 'initial'; 
-        paragraph.classList.remove("qlbt-tag-label");
-      }
-    }
-    else {
+    } else {
       super.format(name, value)
     }
   }
 
+  /**
+   * Ensures the cell is within a valid parent container.
+   *
+   * @param {object} context
+   */
   optimize(context) {
     const rowId = this.domNode.getAttribute("data-row")
-
-    if (this.statics.requiredContainer &&
-      !(this.parent instanceof this.statics.requiredContainer)) {
+    if (
+      this.statics.requiredContainer &&
+      !(this.parent instanceof this.statics.requiredContainer)
+    ) {
       this.wrap(this.statics.requiredContainer.blotName, {
         row: rowId
       })
@@ -276,21 +373,35 @@ class TableCell extends Container {
     super.optimize(context)
   }
 
+  /**
+   * Returns the parent row blot.
+   *
+   * @returns {QuillBlot|null}
+   */
   row() {
     return this.parent
   }
 
+  /**
+   * Returns the row index in the table.
+   *
+   * @returns {number}
+   */
   rowOffset() {
-    if (this.row()) {
-      return this.row().rowOffset()
-    }
-    return -1
+    return this.row() ? this.row().rowOffset() : -1
   }
 
+  /**
+   * Returns the table that this cell belongs to.
+   *
+   * @returns {QuillBlot|null}
+   */
   table() {
     return this.row() && this.row().table()
   }
 }
+
+// Blot registration info
 TableCell.blotName = "table"
 TableCell.tagName = "TD"
 

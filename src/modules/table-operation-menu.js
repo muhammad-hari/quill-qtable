@@ -12,7 +12,7 @@ import operationIcon7 from '../assets/icons/table-delete-column.svg'
 import operationIcon8 from '../assets/icons/table-delete-row.svg'
 import operationIcon9 from '../assets/icons/table-delete-table.svg'
 
-const MENU_MIN_HEIHGT = 150
+const MENU_MIN_HEIGHT = 150
 const MENU_WIDTH = 200
 const ERROR_LIMIT = 5
 
@@ -259,6 +259,24 @@ const MENU_ITEMS_DEFAULT = {
   }
 }
 
+/**
+ * TableOperationMenu handles the creation and rendering of a contextual operation menu
+ * for tables in the Quill editor. It provides functionality such as inserting/removing rows
+ * and columns, merging/unmerging cells, deleting tables, and applying colors to table cells.
+ *
+ * @class
+ * @param {Object} params - Initialization parameters.
+ * @param {HTMLElement} params.table - The table element associated with the menu.
+ * @param {number} params.left - The left offset (in pixels) where the menu will be displayed.
+ * @param {number} params.top - The top offset (in pixels) where the menu will be displayed.
+ * @param {Quill} quill - The Quill editor instance.
+ * @param {Object} options - Additional configuration for the menu.
+ * @param {Object} [options.items] - Custom menu items to override or extend the default.
+ * @param {Object} [options.color] - Background color options (e.g., label and color list).
+ * @param {Object} [options.textcolor] - Text color options (e.g., label and color list).
+ * @param {Object} [options.textlabel] - Label text color options (e.g., label and color list).
+ */
+
 export default class TableOperationMenu {
   constructor (params, quill, options) {
     const quillQTableModule = quill.getModule('qtable')
@@ -286,16 +304,34 @@ export default class TableOperationMenu {
     document.addEventListener("click", this.destroyHandler, false)
   }
 
+  /**
+  * Appends the operation menu DOM node to the body.
+  */
   mount () {
     document.body.appendChild(this.domNode)
   }
 
+  /**
+  * Removes the operation menu DOM node and unbinds the click event listener.
+  *
+  * @returns {null}
+  */
   destroy () {
-    this.domNode.remove()
-    document.removeEventListener("click", this.destroyHandler, false)
+    if (this.domNode && this.domNode.parentNode) {
+      this.domNode.remove();
+      document.removeEventListener("click", this.destroyHandler, false)
+    }
     return null
   }
 
+  /**
+  * Initializes the menu UI structure based on provided parameters and options.
+  *
+  * @param {Object} params - Initialization parameters.
+  * @param {HTMLElement} params.table - The table element.
+  * @param {number} params.left - Left offset position for the menu.
+  * @param {number} params.top - Top offset position for the menu.
+  */
   menuInitial ({ table, left, top }) {
     this.domNode = document.createElement('div')
     this.domNode.classList.add('qlbt-operation-menu')
@@ -303,7 +339,7 @@ export default class TableOperationMenu {
       position: 'absolute',
       left: `${left}px`,
       top: `${top}px`,
-      'min-height': `${MENU_MIN_HEIHGT}px`,
+      'min-height': `${MENU_MIN_HEIGHT}px`,
       width: `${MENU_WIDTH}px`
     })
 
@@ -374,6 +410,12 @@ export default class TableOperationMenu {
     }
   }
 
+  /**
+  * Creates a background color picker UI element.
+  *
+  * @param {string[]} colors - List of color hex strings.
+  * @returns {HTMLElement} DOM node containing color options.
+  */
   colorsItemCreator (colors) {
     const self = this
     const node = document.createElement('div')
@@ -394,7 +436,7 @@ export default class TableOperationMenu {
         const selectedTds = self.tableSelection.selectedTds
         if (selectedTds && selectedTds.length > 0) {
           selectedTds.forEach(tableCell => {
-            tableCell.format('cell-bg', color)
+            tableCell.format('cell-bg', color);
           })
         }
       }, false)
@@ -405,6 +447,12 @@ export default class TableOperationMenu {
     return node
   }
 
+  /**
+  * Creates a text color picker UI element.
+  *
+  * @param {string[]} colors - List of color hex strings for text.
+  * @returns {HTMLElement} DOM node containing text color options.
+  */
   textColorsItemCreator(colors) {
     const self = this;
     const node = document.createElement('div');
@@ -435,6 +483,12 @@ export default class TableOperationMenu {
     return node;
   }
 
+  /**
+  * Creates a label text color picker UI element.
+  *
+  * @param {string[]} colors - List of label text color hex strings.
+  * @returns {HTMLElement} DOM node with label color options.
+  */
   labelTextColorsItemCreator(colors) {
     const self = this;
     const node = document.createElement('div');
@@ -455,7 +509,8 @@ export default class TableOperationMenu {
         const selectedTds = self.tableSelection.selectedTds;
         if (selectedTds && selectedTds.length > 0) {
           selectedTds.forEach(tableCell => {
-            tableCell.format('label-color', color); 
+            tableCell.format('label-color', color);
+
           });
         }
       }, false);
@@ -466,6 +521,15 @@ export default class TableOperationMenu {
     return node;
   }
 
+  /**
+  * Creates an individual menu item button for table operations.
+  *
+  * @param {Object} item - Menu item configuration.
+  * @param {string} item.text - Text label for the menu item.
+  * @param {string} item.iconSrc - SVG icon string.
+  * @param {Function} item.handler - Click event handler for the menu item.
+  * @returns {HTMLElement} Menu item DOM node.
+  */
   menuItemCreator({ text, iconSrc, handler }) {
     const node = document.createElement('div');
     node.classList.add('qlbt-operation-menu-item');
@@ -492,7 +556,15 @@ export default class TableOperationMenu {
 }
 
 
-
+/**
+ * Gets the index of a column tool cell that matches a given boundary condition.
+ *
+ * @param {HTMLElement[]} cells - List of tool cell elements.
+ * @param {DOMRect} boundary - Boundary used for comparison.
+ * @param {Function} conditionFn - Callback to evaluate the matching condition.
+ * @param {HTMLElement} container - Container used for relative position calculation.
+ * @returns {number|false} Index of the matching column or false if not found.
+ */
 function getColToolCellIndexByBoundary (cells, boundary, conditionFn, container) {
   return cells.reduce((findIndex, cell) => {
     let cellRect = getRelativeRect(cell.getBoundingClientRect(), container)
@@ -503,6 +575,15 @@ function getColToolCellIndexByBoundary (cells, boundary, conditionFn, container)
   }, false)
 }
 
+/**
+ * Gets all indexes of column tool cells that match a given boundary condition.
+ *
+ * @param {HTMLElement[]} cells - List of tool cell elements.
+ * @param {DOMRect} boundary - Boundary used for comparison.
+ * @param {Function} conditionFn - Callback to evaluate the matching condition.
+ * @param {HTMLElement} container - Container used for relative position calculation.
+ * @returns {number[]} List of matching column indexes.
+ */
 function getColToolCellIndexesByBoundary (cells, boundary, conditionFn, container) {
   return cells.reduce((findIndexes, cell) => {
     let cellRect = getRelativeRect(
