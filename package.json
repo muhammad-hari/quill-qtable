@@ -1,15 +1,15 @@
 {
-  "engines" : {
-    "npm" : ">=10.5.0",
-    "node" : ">=18.20.0"
+  "engines": {
+    "npm": ">=10.5.0",
+    "node": ">=18.20.0"
   },
   "name": "quill-qtable",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Quill Extension to create a simple table.",
   "main": "dist/quill-qtable.js",
   "scripts": {
     "dev": "webpack-dev-server --config webpack.config.js --mode=development",
-   "build": "webpack --config webpack.config.js --mode=production && webpack --config webpack.config.js --mode=production && if exist dist\\quill-better-table rmdir /s /q dist\\quill-better-table",
+    "build": "webpack --config webpack.config.js --mode=production && webpack --config webpack.config.js --mode=production && if exist dist\\quill-better-table rmdir /s /q dist\\quill-better-table",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
