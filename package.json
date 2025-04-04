@@ -4,7 +4,7 @@
     "node": ">=18.20.0"
   },
   "name": "quill-qtable",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Quill Extension to create a simple table.",
   "main": "dist/quill-qtable.js",
   "scripts": {
