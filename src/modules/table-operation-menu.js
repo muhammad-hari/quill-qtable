@@ -279,7 +279,7 @@ export default class TableOperationMenu {
     this.textColors = options.textcolor && options.textcolor.colors ? options.textcolor.colors : DEFAULT_TEXT_COLORS
 
     this.textLabelSubTitle = options.textlabel && options.textlabel.text ? options.textlabel.text : DEFAULT_LABEL_TEXT_COLOR_SUBTITLE
-    this.textLebelColors = options.textlabel && options.textlabel.colors ? options.textlabel.colors : DEFAULT_LABEL_TEXT_COLORS
+    this.textLabelColors = options.textlabel && options.textlabel.colors ? options.textlabel.colors : DEFAULT_LABEL_TEXT_COLORS
 
     this.menuInitial(params)
     this.mount()
@@ -308,7 +308,7 @@ export default class TableOperationMenu {
     })
 
     for (let name in this.menuItems) {
-      if (this.menuItems[name]) {
+      if (this.menuItems[name] && typeof this.menuItems[name].handler === 'function') {
         this.domNode.appendChild(
           this.menuItemCreator(
             Object.assign({}, MENU_ITEMS_DEFAULT[name], this.menuItems[name])
@@ -320,6 +320,9 @@ export default class TableOperationMenu {
             dividingCreator()
           )
         }
+      }
+      else {
+        console.warn(`Invalid menu item: ${name}`, this.menuItems[name]);
       }
     }
 
@@ -350,7 +353,7 @@ export default class TableOperationMenu {
       this.domNode.appendChild(
         subTitleCreator(this.textLabelSubTitle)
       );
-      this.domNode.appendChild(this.labelTextColorsItemCreator(this.textLebelColors));
+      this.domNode.appendChild(this.labelTextColorsItemCreator(this.textLabelColors));
       this.domNode.appendChild(dividingCreator());
 
     }
@@ -463,25 +466,32 @@ export default class TableOperationMenu {
     return node;
   }
 
+  menuItemCreator({ text, iconSrc, handler }) {
+    const node = document.createElement('div');
+    node.classList.add('qlbt-operation-menu-item');
   
-  menuItemCreator ({ text, iconSrc, handler }) {
-    const node = document.createElement('div')
-    node.classList.add('qlbt-operation-menu-item')
-
-    const iconSpan = document.createElement('span')
-    iconSpan.classList.add('qlbt-operation-menu-icon')
-    iconSpan.innerHTML = iconSrc
-
-    const textSpan = document.createElement('span')
-    textSpan.classList.add('qlbt-operation-menu-text')
-    textSpan.innerText = text
-
-    node.appendChild(iconSpan)
-    node.appendChild(textSpan)
-    node.addEventListener('click', handler.bind(this), false)
-    return node
+    const iconSpan = document.createElement('span');
+    iconSpan.classList.add('qlbt-operation-menu-icon');
+    iconSpan.innerHTML = iconSrc;
+  
+    const textSpan = document.createElement('span');
+    textSpan.classList.add('qlbt-operation-menu-text');
+    textSpan.innerText = text;
+  
+    node.appendChild(iconSpan);
+    node.appendChild(textSpan);
+  
+    if (typeof handler === 'function') {
+      node.addEventListener('click', handler.bind(this), false);
+    } else {
+      console.warn(`Handler for menu item "${text}" is not a function`, handler);
+    }
+  
+    return node;
   }
 }
+
+
 
 function getColToolCellIndexByBoundary (cells, boundary, conditionFn, container) {
   return cells.reduce((findIndex, cell) => {
